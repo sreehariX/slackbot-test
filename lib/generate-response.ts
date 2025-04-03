@@ -1,6 +1,4 @@
 import { CoreMessage } from "ai";
-import { google } from "@ai-sdk/google";
-import { generateText } from "ai";
 
 export const generateResponse = async (
   messages: CoreMessage[],
@@ -11,38 +9,41 @@ export const generateResponse = async (
   if (updateStatus) updateStatus("Generating response...");
   
   try {
-    // Use the Google model with proper type handling
-    const model = google("gemini-2.0-flash") as any;
+    // Extract the last user message
+    const lastUserMessage = messages.filter(msg => msg.role === "user").pop();
     
-    // Add a timeout to the request
-    const timeoutPromise = new Promise<{ text: string }>((_, reject) => {
-      setTimeout(() => reject(new Error("Request timed out after 30 seconds")), 30000);
+    if (!lastUserMessage || !lastUserMessage.content) {
+      return "I couldn't understand your question. Please try again.";
+    }
+    
+    const userQuery = lastUserMessage.content.toString();
+    
+    // Call the Vitess API
+    const response = await fetch('https://vitess-backend-api-fk655.ondigitalocean.app/enhance-query-cli', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query: userQuery,
+        version: "v22.0 (Development)",
+        n_results: 10,
+        include_resources: true
+      })
     });
     
-    // Race between the actual request and the timeout
-    const response = await Promise.race([
-      generateText({
-        model,
-        messages,
-      }),
-      timeoutPromise
-    ]);
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
+    }
     
-    text = response.text;
+    const data = await response.json();
+    
+    // Use the summary from the API response
+    text = data.summary || "Sorry, I couldn't find any information about that.";
   } catch (error) {
     console.error("Error generating response:", error);
     text = "Sorry, I encountered an error while generating a response. Please try again later.";
-    
-    // Add more detailed error information for debugging
-    if (error instanceof Error) {
-      console.error(`Error details: ${error.name} - ${error.message}`);
-      if (error.stack) console.error(`Stack trace: ${error.stack}`);
-      
-      // Specific message for timeout errors
-      if (error.message.includes("timed out")) {
-        text = "Sorry, the response took too long to generate. Please try a shorter or simpler query.";
-      }
-    }
   }
 
   // Convert markdown to Slack mrkdwn format
