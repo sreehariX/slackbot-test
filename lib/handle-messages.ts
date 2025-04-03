@@ -50,24 +50,46 @@ export async function handleNewAssistantMessage(
   const updateStatus = updateStatusUtil(channel, thread_ts);
   updateStatus("is thinking...");
 
-  const messages = await getThread(channel, thread_ts, botUserId);
-  const result = await generateResponse(messages, updateStatus);
-
-  await client.chat.postMessage({
-    channel: channel,
-    thread_ts: thread_ts,
-    text: result,
-    unfurl_links: false,
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: result,
+  try {
+    console.log("Fetching thread messages...");
+    const messages = await getThread(channel, thread_ts, botUserId);
+    
+    console.log(`Generating response for ${messages.length} messages...`);
+    const result = await generateResponse(messages, updateStatus);
+    
+    console.log("Posting response to Slack...");
+    await client.chat.postMessage({
+      channel: channel,
+      thread_ts: thread_ts,
+      text: result,
+      unfurl_links: false,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: result,
+          },
         },
-      },
-    ],
-  });
-
-  updateStatus("");
+      ],
+    });
+    
+    updateStatus("");
+    console.log("Response successfully posted.");
+  } catch (error) {
+    console.error("Error in handleNewAssistantMessage:", error);
+    
+    // Always provide some response to the user
+    try {
+      await client.chat.postMessage({
+        channel: channel,
+        thread_ts: thread_ts,
+        text: "Sorry, I encountered an error while processing your request. Please try again later.",
+      });
+      
+      updateStatus("");
+    } catch (postError) {
+      console.error("Failed to post error message:", postError);
+    }
+  }
 }
